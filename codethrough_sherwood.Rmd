@@ -1,0 +1,177 @@
+---
+title: "Code Through"
+author: "Jill Sherwood"
+date: "10/8/2020"
+output: 
+  html_document:
+    theme: cosmo
+    highlight: breezedark
+    df_print: paged
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Introduction
+
+Many researchers use U.S. Census data to analyze socioeconomic patterns. These analyses vary from examining specific variables, such as percent unemployment by Census tract or more in-depth examination of the disproportionate impact of Covid-19 and disparity of care within Census tracts. Working with Census data through some of the more traditional methods, such as ArcGIS software, was straightforward but also time consuming. One would need to download the geometry (i.e. shapefiles), find and download the tabular data, and join those together using the ArcGIS software. Programs such as R has made obtaining and working with Census data easier and faster. The tidycensus package is one that provides users the ability to directly access the Census Bureau API, download data and shapefiles together without the need to join the data. The tidycensus can also be used with open source geometries, such as geojson files. The tidycensus package can be used to obtain data from the Decennial Census and American Community Survey (ACS) APIs.
+
+To start, you need to load the tidyverse and tidycensus packages. Tidycensus recommends using the ggplot2 package to visualize the data but there are multiple other packages that can used also. 
+
+```{r results='hide'}
+
+library( tidyverse )
+library( tidycensus ) # allows for interfacing with the Census Bureau's decennial census and American Community Survey (ACS) APIs
+library( sf ) # encode spatial data
+library( ggplot2 ) # visualize the census data
+library( tigris ) # download geospatial data
+
+```
+## Getting Census data from the API
+
+The U.S. Census Bureau requires that an API key be used to ensure the integrity the tidycensus package and Census API key;
+In order to access Census data, you need to first sign up to get an API key (https://api.census.gov/data/key_signup.html)
+Once you have the have API key, you can add it to your script using the following code:
+
+```{r }
+# key <- "abc123"
+# To install your API key for use in future sessions, run this function with `install = TRUE`.
+#Using 'install = TRUE' stores the key in your .Renviron so that it can be accessed later using the Sys.getenv("CENSUS_API_KEY") command.
+
+#census_api_key( key, install = TRUE ) # To install your API key for use in future sessions, run this function with `install = TRUE`.
+
+```
+
+I've already stored my Census API in my R environment so I just need to run the following command:
+```{r echo=T, results='hide'}
+
+Sys.getenv("CENSUS_API_KEY")
+
+```
+
+## Main Functions
+
+### Looking at Census Variables
+The Census datasets have multiple variables that are identified with unique codes. Unless you have memorized every one(!), it is helpful to be able to look up codes for variables of interest. Tidycensus has a function called "load_variable()" which returns all variable codes from the selected dataset in a tibble. The codes are followed by a brief description. 
+
+```{r }
+# Get variable for the 2018 American Community Survey
+var_acs18 <- load_variables(year = 2018 , dataset = "acs5")
+
+
+# One way to view the variables to allow for sorting and filtering
+# View( var_acs18 )
+
+```
+If you want to look at variable outside of R, you also navigate to:
+  https://api.census.gov/data/2018/acs/acs5/variables.html -OR-
+  https://www2.census.gov/geo/tiger/TIGER_DP/2018ACS/Metadata/STATE_METADATA_2018.txt
+  
+This website also has an introductory explanation of the tables: 
+  https://www.census.gov/programs-surveys/acs/guidance/which-data-tool/table-ids-explained.html
+
+### Filtering and downloading the ACS data
+
+For ACS data, the "get_acs()" is used to filter and request data. There are multiple options that one can use to filter the data. Use ?get_acs() to get the full list of options. Some of the more common options are:
+    
+    geography: i.e. state, US, county, census tract, etc.
+    year: endyear of sample i.e. 2018
+    survey: i.e. acs1, acs5
+    table or variables: i.e. B19013 or B19013_001
+    geometry: TRUE or FALSE (TRUE returns spatial geometries)
+
+Using the get_acs() function, you can select one or multiple subsets of the variables. I'm going to filter out median household income for  from the 5 year ACS (2014 - 2018) for all tracts in Maricopa County. 
+
+```{r results='hide'}
+
+mari_acs <- get_acs( state = "AZ", 
+                     county = "Maricopa",
+                     geography = "tract",
+                     variables = c("B19013I_001"),
+                     survey = "acs5",
+                     year = 2018,
+                     geometry = TRUE )
+                     
+```
+
+### Visualizing the Census data
+
+The ggplot2 package is one quick way to visualize the Census data.
+
+```{r }
+
+mari_acs %>% 
+  ggplot(aes(fill = estimate)) + 
+  geom_sf(color = NA) +
+  scale_fill_viridis_c(option = "plasma",
+                       labels=scales::dollar) +
+  theme_minimal() +
+  labs(title = "Household Median Income by Census Tract",
+       fill = "Household Median Income")
+
+```
+
+
+### Interactive Mapping of the data
+
+Looking at the above map of Maricopa County, it is hard to discern the differences between the Census tracts at that scale. One could subset the data to include only the tracts within the Greater Phoenix region. Another useful method for visualizing data at different scales would be to create an interactive map. There are multiple ways to do this but I've chosen to use the leaflet package. Using the leaflet package, you can add the ggplot layer to a base layer (Provider Tiles) to create an interactive zoomable map.
+
+```{r warning=FALSE }
+library( leaflet )
+
+pal <- colorNumeric(palette = "plasma", 
+                    domain = mari_acs$estimate)
+mari_acs %>%
+  st_transform(crs = "+init=epsg:4326") %>% 
+  leaflet(width = "100%") %>% 
+  addProviderTiles(provider = "CartoDB.Positron") %>%
+  addPolygons(popup = ~ str_extract(NAME, "^([^,]*)"),
+                stroke = FALSE,
+                smoothFactor = 0,
+                fillOpacity = 0.7,
+                color = ~ pal(estimate)) %>%
+    addLegend("bottomright", 
+              pal = pal, 
+              values = ~ estimate,
+              title = "County Populations",
+              opacity = 1)
+
+```
+
+## Summary
+This was just a very brief overview of some of the functions of the tidycensus package. There is a great deal more to using the tidycensus package, including loading Decennial Census data. There are also more advanced uses of the tidycensus package where one can extract multiple subsets of tables from the Census data and summarize on the main table. It was interesting to learn about the basics of the tidycensus and leaflet packages. I'm looking forward to digging in deeper. 
+
+
+Sources:
+tidycensus: https://walker-data.com/tidycensus/
+Using tidycensus and leaflet to map Census data: https://juliasilge.com/blog/using-tidycensus/
+Spatial data in tidycensus: https://walker-data.com/tidycensus/articles/spatial-data.html
+Creating beautiful demographic maps in R with the tidycensus and tmap packages: http://zevross.com/blog/2018/10/02/creating-beautiful-demographic-maps-in-r-with-the-tidycensus-and-tmap-packages/
+Leaflet for R: https://rstudio.github.io/leaflet/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
