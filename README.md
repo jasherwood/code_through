@@ -1,1 +1,1 @@
-# Code through for CPP527 describing the tidycensus package.
+Code through for CPP527 describing the tidycensus package.
